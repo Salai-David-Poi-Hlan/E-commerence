@@ -1,20 +1,24 @@
 import {useEffect,useState}  from 'react'
 import { useParams } from 'react-router-dom'
 import {getProduct} from '../api/products'
+import useCartStore from '../store/cartStore.js'
 
-
-function productDetails(){
+function ProductDetails(){
     const {id}=useParams()
     const [product,setProduct]=useState(null)
     const [loading,setLoading]=useState(true)
     const [error,SetError]=useState(null)
+    const addItem=useCartStore((state)=>state.addItem) 
 
     useEffect(()=>{
-      getProduct()
-      .then((res)=>setProduct(res))
+      getProduct(id)
+      .then((res)=>{
+        console.log(res);
+        
+        setProduct(res.data)})
       .catch((err)=>SetError(err))
       .finally(()=>setLoading(false))
-    },[])
+    },[id])
 
 
     if (loading) return <p>Loading ... </p>
@@ -25,8 +29,9 @@ function productDetails(){
               <p>{product.description}</p>
               <p><strong>{product.price}</strong></p>
               <p>In stock: {product.stock_qty}</p>
+              <button onClick={() => addItem(product)}>Add to Cart</button>
     </div>)
 } 
 
 
-export default productDetails;
+export default ProductDetails;

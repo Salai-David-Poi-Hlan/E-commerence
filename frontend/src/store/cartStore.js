@@ -21,7 +21,9 @@ const useCartStore=create((set,get)=>({
     },
 
     removeItem: (id)=>{
-        set({item:get().items.filter((item)=>item.id!==id)})
+        console.log('lee');
+        
+        set({items:get().items.filter((item)=>item.id!==id)})
     },
 
     updateQuantity: (id,quantity)=>{
