@@ -1,0 +1,62 @@
+from django.shortcuts import render
+from rest_framework import viewsets,permissions,status
+from rest_framework.response import Response
+from rest_framework.decorators import action
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+
+from products.models import Product
+from .models import Order,OrderItem
+from .serializers import OrderSerializer,OrderCreateSerializer
+
+class OrderViewSet(viewsets.ModelViewSet):
+    serializer_class=OrderSerializer
+    permission_classes=[permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return Order.objects.all().order_by('-created_at')
+        return Order.objects.filter(user=self.request.user).order_by('-created_at')
+
+    
+    def create(self,request):
+        serializer=OrderCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data=serializer.validated_data
+
+
+        with transaction.atomic():
+            total=0
+            order=Order.objects.create(
+                user=request.user,
+                shipping_address=data['shipping_address'],
+                total_price=0,
+            )
+
+            for item in data['items']:
+                product=get_object_or_404(Product,id=item['product'])
+
+                if product.stock_qty < item['quantity']:
+                    transaction.set_rollback(True)
+                    return Response(
+                        {'error':f'Not enough stock for {product.name}'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    product_name=product.name,
+                    price=product.price,
+                    quantity=item['quantity']
+                )
+
+                product.stock_qty-=item['quantity']
+                product.save()
+
+                total+=product.price*item['quantity']
+            order.total_price=total
+            order.save()
+        return Response(OrderSerializer(order).data,status.HTTP_201_CREATED)
+
+
