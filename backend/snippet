@@ -1,0 +1,147 @@
+# orders/views.py  (add to the existing file)
+from rest_framework.views import APIView
+from .serializers import OrderCreateSerializer, OrderItemCreateSerializer
+from .services import check_stock
+
+
+class CartValidateView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = OrderItemCreateSerializer(data=request.data.get('items', []), many=True)
+        serializer.is_valid(raise_exception=True)
+
+        lines, problems = check_stock(serializer.validated_data)
+        return Response({
+            'valid': not problems,
+            'items': [
+                {'product': p.id, 'name': p.name, 'price': p.price, 'quantity': qty}
+                for p, qty in lines
+            ],
+            'problems': problems,
+        })
+
+
+
+
+# ecommerce_backend/urls.py
+from orders.views import OrderViewSet, CartValidateView
+
+urlpatterns = [
+    ...
+    path('api/cart/validate/', CartValidateView.as_view()),
+]
+
+
+from decimal import Decimal
+
+def create(self, request):
+    serializer = OrderCreateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+
+    with transaction.atomic():
+        lines, problems = check_stock(data['items'], lock=True)
+        if problems:
+            return Response({'errors': problems}, status=status.HTTP_400_BAD_REQUEST)
+
+        order = Order.objects.create(
+            user=request.user,
+            shipping_address=data['shipping_address'],
+            total_price=Decimal('0'),
+        )
+
+        total = Decimal('0')
+        for product, qty in lines:
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                product_name=product.name,
+                price=product.price,
+                quantity=qty,
+            )
+            product.stock_qty -= qty
+            product.save(update_fields=['stock_qty'])
+            total += product.price * qty
+
+        order.total_price = total
+        order.save(update_fields=['total_price'])
+
+    return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+# orders/views.py
+from rest_framework import mixins, viewsets
+
+class OrderViewSet(mixins.CreateModelMixin,
+                   mixins.ListModelMixin,
+                   mixins.RetrieveModelMixin,
+                   viewsets.GenericViewSet):
+    ...  # keep serializer_class, permission_classes, get_queryset, create
+
+
+
+# orders/services.py  (add to the existing file)
+from django.db import transaction
+from django.db.models import F
+from products.models import Product
+from .models import Order
+
+ALLOWED_TRANSITIONS = {
+    'pending':   {'paid', 'cancelled'},
+    'paid':      {'shipped', 'cancelled'},
+    'shipped':   {'delivered'},
+    'delivered': set(),
+    'cancelled': set(),
+}
+
+
+class InvalidTransition(Exception):
+    pass
+
+
+def change_order_status(order_id, new_status):
+    with transaction.atomic():
+        # lock the order row so two simultaneous changes can't both succeed
+        order = Order.objects.select_for_update().get(pk=order_id)
+
+        if new_status not in ALLOWED_TRANSITIONS[order.status]:
+            raise InvalidTransition(
+                f"Cannot move order from '{order.status}' to '{new_status}'"
+            )
+
+        if new_status == 'cancelled':
+            for item in order.items.all():
+                if item.product_id:  # product may have been deleted
+                    Product.objects.filter(pk=item.product_id).update(
+                        stock_qty=F('stock_qty') + item.quantity
+                    )
+
+        order.status = new_status
+        order.save(update_fields=['status', 'updated_at'])
+    return order
+
+
+
+# orders/views.py  (add inside OrderViewSet)
+from rest_framework.decorators import action
+from .services import change_order_status, InvalidTransition
+
+@action(detail=True, methods=['post'], url_path='status')
+def set_status(self, request, pk=None):
+    order = self.get_object()  # already scoped: customers only reach their own orders
+    new_status = request.data.get('status')
+
+    if new_status not in dict(Order.STATUS_CHOICES):
+        return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # customers may only cancel their own order, and only while it's pending
+    is_self_cancel = new_status == 'cancelled' and order.status == 'pending'
+    if not request.user.is_staff and not is_self_cancel:
+        return Response({'error': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        order = change_order_status(order.pk, new_status)
+    except InvalidTransition as e:
+        return Response({'error': str(e)}, status=status.HTTP_409_CONFLICT)
+
+    return Response(OrderSerializer(order).data)
