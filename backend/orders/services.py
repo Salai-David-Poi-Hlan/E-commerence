@@ -68,6 +68,7 @@ def check_stock(items,lock=False):
                 'available':product.stock_qty
             })
         else:
-            lines.append({product,qty})
+            lines.append((product,qty
+                          ))
 
     return lines,problems
