@@ -19,6 +19,8 @@ class Order(models.Model):
     updated_at=models.DateTimeField(auto_now=True)
 
     shipping_address=models.TextField(blank=True)
+    stripe_session_id = models.CharField(max_length=255,blank=True)
+    paid_at = models.DateField(null=True,blank=True)
 
 
     def __str__(self):

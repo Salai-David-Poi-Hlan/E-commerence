@@ -11,7 +11,15 @@ from decimal import Decimal
 from products.models import Product
 from .models import Order,OrderItem
 from .serializers import OrderSerializer,OrderCreateSerializer
+from .payment import create_checkout_session
+import logging
+import stripe
+from django.conf import settings
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
+logger=logging.getLogger(__name__)
 
 class OrderViewSet(
     mixins.CreateModelMixin,
@@ -103,6 +111,55 @@ class CartValidateView(APIView):
               ],
               'problems':problems
         })
+
+
+class PayOrderView(APIView):
+    permission_classes=[permissions.IsAuthenticated]
+
+    def post(self,request,pk):
+        order=get_object_or_404(Order,pk=pk,user=request.user)
+        if order.status != 'pending':
+            return Response({'error':f'Order is {order.status}'})
+
+
+        session=create_checkout_session(order)
+        order.stripe_session_id=session.id
+        order.save(update_fields=['stripe_session_id'])
+        return Response({'checkout_url':session.url})
+
+@csrf_exempt
+@require_POST
+def stripe_webhook(request):
+    try:
+        event=stripe.Webhook.construct_event(
+            request.body,
+            request.META.get('HTTP_STRIPE_SIGNATURE',''),
+            settings.STRIPE_WEBHOOK_SECRET,
+        )
+
+    except (ValueError,stripe.SignatureVerificationError):
+        return HttpResponse(status=400)
+
+    if event['type'] in ('checkout.session.completed',
+                         'checkout.session.async_payment_succeeded'):
+        session=event['data']['object'].to_dict()
+        if session['payment_status'] == 'paid':
+            order_id=(session.get('metadata') or {}).get('order_id')
+            if not order_id:
+                logger.warning('Session %s has no order id',session.get('id'))
+                return HttpResponse(status=200)
+            try:
+                change_order_status(int(order_id),'paid')
+            except InvalidTransition:
+                logger.warning('Payment for order %s but transition not allowed',order_id)
+            except Order.DoesNotExist:
+                logger.error('Payment for unknown order %s',order_id)
+
+    return HttpResponse(status=200)
+
+
+                
+    
 
 
 

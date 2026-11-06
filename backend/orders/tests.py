@@ -6,6 +6,9 @@ from rest_framework.test import APIClient
 from products.models import Product
 from .models import Order
 from .services import change_order_status,InvalidTransition
+from unittest.mock import patch
+import stripe
+
 
 def make_client(user):
     client=APIClient()
@@ -162,6 +165,83 @@ class ConcurrencyTests(TransactionTestCase):
         self.assertEqual((len(successes),len(failures)),(1,1))
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_qty,1)
+
+
+
+class WebhookTests(TestCase):
+    def setUp(self):
+        user=User.objects.create_user('buyer',password='x')
+        product=Product.objects.create(name='Mouse',price='10.00',stock_qty=3)
+        make_client(user).post('/api/orders/',{
+            'shipping_address':'Bangkok',
+            'items':[{'product':product.id,'quantity':1}],
+        },format='json')
+        self.order=Order.objects.get()
+    
+
+    def event(self,payment_status='paid'):
+        return stripe.Event.construct_from({
+            'id':'evt_test',
+            'object':'event',
+            'type':'checkout.session.completed',
+            'data':{
+                'object':{
+                    'id':'cs_test_123',
+                    'object':'checkout.session',
+                    'payment_status':payment_status,
+                    'metadata':{'order_id':str(self.order.pk)}
+                }
+            }
+        },'sk_test_x')
+
+    def post(self):
+        return self.client.post('/api/stripe/webhook/',data='{}',content_type='application/json',HTTP_STRIPE_SIGNATURE='x')
+
+    @patch('orders.views.stripe.Webhook.construct_event')
+    def test_paid_event_marks_order_paid(self,construct):
+        construct.return_value=self.event()
+        self.assertEqual(self.post().status_code,200)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'paid')
+        self.assertIsNotNone(self.order.paid_at)
+
+    @patch('orders.views.stripe.Webhook.construct_event')
+    def test_duplicate_delivery_is_harmless(self,construct):
+        construct.return_value=self.event()
+        self.post()
+        self.order.refresh_from_db()
+        first_paid_at=self.order.paid_at
+        self.assertEqual(self.post().status_code,200)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.paid_at,first_paid_at)
+
+
+    @patch('orders.views.stripe.Webhook.construct_event')
+    def test_unpaid_session_does_not_mark_paid(self,construct):
+        construct.return_value=self.event('unpaid')
+        self.post()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'pending')
+
+
+    def test_bad_signature_rejected(self):
+        self.assertEqual(self.post().status_code,400)
+
+
+    @patch('orders.views.stripe.Webhook.construct_event')
+    def test_missing_metadata_return_200(self,construct):
+        ev=self.event()
+        ev['data']['object']['metadata']={}
+        construct.return_value=ev
+        self.assertEqual(self.post().status_code,200)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'pending')
+
+
+
+
+
+    
 
 
 

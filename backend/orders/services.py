@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import F
 from products.models import Product
 from .models import Order
-
+from django.utils import timezone
 
 
 ALLOWED_TRANSITIONS={
@@ -36,9 +36,12 @@ def change_order_status(order_id,new_status):
                     Product.objects.filter(pk=item.product_id).update(
                         stock_qty=F('stock_qty')+ item.quantity
                     )
-
+        update_fields=['status','updated_at']
+        if new_status == 'paid':
+            order.paid_at=timezone.now()
+            update_fields.append('paid_at')
         order.status=new_status
-        order.save(update_fields=['status','updated_at'])
+        order.save(update_fields=update_fields)
     return order
 
 
