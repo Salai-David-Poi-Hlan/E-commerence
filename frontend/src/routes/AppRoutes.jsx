@@ -5,6 +5,9 @@ import Cart from '../pages/Cart'
 import Login from'../pages/Login'
 import ProductForm from '../pages/admin/ProductForm'
 import PrivateRoute  from './PrivateRoute'
+import Checkout from '../pages/Checkout'
+import OrderSuccess from '../pages/OrderSuccess'
+
 
 function AppRoutes(){
      
@@ -21,6 +24,12 @@ function AppRoutes(){
                        <ProductForm/>
                 </PrivateRoute>
            }/>
+           <Route path="/checkout" element={<PrivateRoute>
+                 <Checkout/>
+           </PrivateRoute>}/>
+           <Route path="/orders/:id/success" element={<PrivateRoute>
+                   <OrderSuccess/>
+           </PrivateRoute>}/>
         </Routes>
     )
   

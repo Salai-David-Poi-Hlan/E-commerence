@@ -1,5 +1,5 @@
 import {useState} from 'react'
-import  {useNavigate} from 'react-router-dom'
+import  {useNavigate, useLocation} from 'react-router-dom'
 import {login} from '../api/auth'
 import useAuthStore  from '../store/authStore'
 
@@ -11,13 +11,15 @@ function Login(){
         const [error,setError]=useState('')
         const setToken=useAuthStore((state)=>state.setToken)
         const navigate=useNavigate()
+        const location=useLocation()
+        const from=location.state?.from?.pathname || '/';
 
         const handleSubmit=async (e)=>{
               e.preventDefault()
               try{
                 const res=await login(username,password)
                 setToken(res.data.access)
-                navigate('/admin/products/new')
+                navigate(from,{replace:true})
               }catch(err){
                    setError('Invalid Credentials')
               }

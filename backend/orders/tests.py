@@ -8,7 +8,9 @@ from .models import Order
 from .services import change_order_status,InvalidTransition
 from unittest.mock import patch
 import stripe
-
+from datetime import timedelta
+from django.core.management import call_command
+from django.utils import timezone
 
 def make_client(user):
     client=APIClient()
@@ -240,8 +242,63 @@ class WebhookTests(TestCase):
 
 
 
+class ExpireCommandTests(TestCase):
+
+    def setUp(self):
+        user=User.objects.create_user('buyer',password='x')
+        self.product= Product.objects.create(name='Mouse',price='10.00',stock_qty=3)
+        make_client(user).post('/api/orders/',{
+            'shipping_address':"Bangkok",
+            'items':[{'product':self.product.id,'quantity':2}]
+        },format='json')
+
+        self.order=Order.objects.get()
+
+    def age(self,minutes):
+        Order.objects.filter(pk=self.order.pk).update(
+            created_at=timezone.now() - timedelta(minutes=minutes)
+        )
+
+    def stock(self):
+        self.product.refresh_from_db()
+        return self.product.stock_qty
+    
+
+    def test_old_pending_order_is_cancelled_and_stock_restored(self):
+        self.assertEqual(self.stock(),1) 
+        self.age(60)
+        call_command('expire_pending_orders')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'cancelled')
+        self.assertEqual(self.stock(),3)    
+
+
+    def test_recent_pending_order_is_untouched(self):
+        self.age(5)
+        call_command('expire_pending_orders')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'pending')
+        self.assertEqual(self.stock(),1)
+
+    def test_paid_order_is_never_expired(self):
+        change_order_status(self.order.pk,'paid')
+        self.age(60)
+        call_command('expire_pending_orders')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'paid')
+
+    def test_guard_blocks_cancel_id_paid_in_the_meantime(self):
+        change_order_status(self.order.pk,'paid')
+        with self.assertRaises(InvalidTransition):
+            change_order_status(self.order.pk,'cancelled',expected_status='pending')
+        self.assertEqual(self.stock(),1)   
+
+
 
     
+
+
+
 
 
 

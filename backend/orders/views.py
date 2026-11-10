@@ -106,7 +106,7 @@ class CartValidateView(APIView):
         return Response ({
               'valid':not problems,
               'items':[
-                  {'product':p.id,'name':p.name,'prcie':p.price,'quantity':qty}
+                  {'product':p.id,'name':p.name,'price':p.price,'quantity':qty}
                   for p,qty in lines
               ],
               'problems':problems

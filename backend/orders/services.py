@@ -20,16 +20,17 @@ class InvalidTransition(Exception):
 
 
 
-def change_order_status(order_id,new_status):
+def change_order_status(order_id,new_status,expected_status=None):
     with transaction.atomic():
         order=Order.objects.select_for_update().get(pk=order_id)
-
-
+        if expected_status and order.status != expected_status:
+            raise InvalidTransition(
+                f"Order is '{order.status}', expected '{expected_status}'"
+            )
         if new_status not in ALLOWED_TRANSITIONS[order.status]:
             raise InvalidTransition(
                 f"Cannot move order from '{order.status}' to {new_status}"
             )
-
         if new_status == 'cancelled':
             for item in order.items.all():
                 if item.product_id:

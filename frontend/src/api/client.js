@@ -15,4 +15,17 @@ apiClient.interceptors.request.use((config)=>{
     return config
 })
 
+
+apiClient.interceptors.response.use(
+    (res)=>res,
+    (err)=>{
+        const isLoginCall=err.config?.url?.includes('/token/');
+        if (err.response?.status===401 && !isLoginCall){
+            useAuthStore.getState().logout()
+            window.location.href='/login'
+        }
+        return Promise.reject(err)
+    }
+)
+
 export default apiClient 

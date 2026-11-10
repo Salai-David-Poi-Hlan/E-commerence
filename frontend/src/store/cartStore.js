@@ -3,7 +3,6 @@ import {create} from 'zustand'
 
 const useCartStore=create((set,get)=>({
     items:[],
-
     addItem: (product)=>{
         const items=get().items;
         const existing=items.find((item)=>item.id===product.id)
@@ -21,8 +20,6 @@ const useCartStore=create((set,get)=>({
     },
 
     removeItem: (id)=>{
-        console.log('lee');
-        
         set({items:get().items.filter((item)=>item.id!==id)})
     },
 
@@ -40,6 +37,15 @@ const useCartStore=create((set,get)=>({
     },
         
     clearCart: ()=>set({items:[]}),
+
+    syncPrices:(validated)=>
+        set({
+        items: get().items.map((item)=>{
+          const v=validated.find((x)=>x.product === item.id);
+          return v? {...item,price:Number(v.price)}:item
+        })}
+        ),
+
 
     getTotal: ()=>{
         return get().items.reduce((sum,item)=>sum+item.price*item.quantity,0);

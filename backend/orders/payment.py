@@ -1,5 +1,7 @@
 import stripe
 from django.conf import settings
+import time
+
 
 stripe.api_key=settings.STRIPE_SECRET_KEY
 
@@ -22,5 +24,6 @@ def create_checkout_session(order):
         client_reference_id=str(order.pk),
         metadata={'order_id':str(order.pk)},
         success_url=f'{settings.FRONTEND_URL}/orders/{order.pk}/success',
-        cancel_url=f'{settings.FRONTEND_URL}/cart'
+        cancel_url=f'{settings.FRONTEND_URL}/cart',
+        expires_at=int(time.time()) + 31*60
     )

@@ -1,5 +1,5 @@
 import useCartStore from '../store/cartStore'
-
+import {useNavigate} from 'react-router-dom'
 
 
 function Cart(){
@@ -7,7 +7,7 @@ function Cart(){
     const removeItem=useCartStore((state)=>state.removeItem)
     const updateQuantity=useCartStore((store)=>store.updateQuantity)
     const getTotal=useCartStore((state)=>state.getTotal)
-
+    const navigate=useNavigate()
 
      if (items.length===0){
         return(
@@ -42,15 +42,17 @@ function Cart(){
                         />
 
 
-                        <span>${(item.price * item.quantity).toFixed(2)}</span>
+                        <span>Bhat {(item.price * item.quantity).toFixed(2)}</span>
                        <button onClick={()=>removeItem(item.id)}>Remove</button>
 
                      </div>
                 ))}
 
 
-                <h3 style={{marginTop:'1rem'}}>Total ${getTotal().toFixed(2)}</h3>
-                <button style={{marginTop:'1rem'}}>Proceed To Checkout</button>
+                <h3 style={{marginTop:'1rem'}}>Total Bhat {getTotal().toFixed(2)}</h3>
+                <button onClick={()=>navigate('/checkout')} style={{marginTop:'1rem'}}>
+                    Proceed To Checkout
+                    </button>
          </div>
      )
 }
