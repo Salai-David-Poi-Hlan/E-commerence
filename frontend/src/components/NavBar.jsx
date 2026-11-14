@@ -1,11 +1,28 @@
-import {Link} from  'react-router-dom'
+import {Link,useNavigate} from  'react-router-dom'
 import useCartStore from '../store/cartStore'
-
+import {revokeToken} from '../api/auth'
+import useAuthStore from '../store/authStore'
 
 function Navbar(){
     const items=useCartStore((state)=>state.items)
     const itemsCount=items.reduce((sum,item)=>sum+item.quantity,0);
-   
+    const loggedIn=useAuthStore((s)=>!!s.refreshToken)
+    const navigate=useNavigate()
+
+    console.log(loggedIn);
+    
+    const handlelogout=async () =>{
+         const {refreshToken,logout} = useAuthStore.getState()
+         try{
+            await revokeToken(refreshToken)
+         }
+         catch{
+
+         }
+         logout()
+         navigate('/')
+    }
+
     
 
     return(
@@ -37,7 +54,15 @@ function Navbar(){
                     Cart {itemsCount > 0 && `${itemsCount}`}
                                      </Link>
 
+                 {loggedIn ? (
+                    <button onClick={handlelogout}>Logout</button>
+                 ):(
+                    <>
+                        <Link to="/login" style={{marginLeft:'1rem'}}>Login</Link>
+                        <Link to="/register" style={{marginLeft:'1rem'}}>Register</Link>
 
+                    </>
+                 )}
 
                  </div>
 

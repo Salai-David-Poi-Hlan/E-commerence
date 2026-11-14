@@ -12,10 +12,12 @@ from datetime import timedelta
 from django.core.management import call_command
 from django.utils import timezone
 
+
 def make_client(user):
     client=APIClient()
     client.force_authenticate(user=user)
     return client
+
 
 class OrderRulesTests(TestCase):
     def setUp(self):

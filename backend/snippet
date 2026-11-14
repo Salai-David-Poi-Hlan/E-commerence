@@ -1,52 +1,169 @@
-# orders/tests.py (add)
+# ecommerce_backend/settings.py
 from datetime import timedelta
-from django.core.management import call_command
-from django.utils import timezone
+
+INSTALLED_APPS = [
+    ...
+    'rest_framework_simplejwt.token_blacklist',
+]
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+}
+
+# ecommerce_backend/urls.py
+from rest_framework_simplejwt.views import TokenBlacklistView
+
+path('api/token/blacklist/', TokenBlacklistView.as_view()),   # used for logout
 
 
-class ExpireCommandTests(TestCase):
+
+# accounts/tests.py  (add)
+class RefreshTests(APITestCase):
     def setUp(self):
-        user = User.objects.create_user('buyer', password='x')
-        self.product = Product.objects.create(name='Mouse', price='10.00', stock_qty=3)
-        make_client(user).post('/api/orders/', {
-            'shipping_address': 'Bangkok',
-            'items': [{'product': self.product.id, 'quantity': 2}],
-        }, format='json')
-        self.order = Order.objects.get()
+        User.objects.create_user('alice', password='c0rrect-horse-battery')
+        res = self.client.post('/api/token/', {
+            'username': 'alice', 'password': 'c0rrect-horse-battery'}, format='json')
+        self.refresh = res.data['refresh']
 
-    def age(self, minutes):
-        # created_at is auto_now_add, so backdate it with update()
-        Order.objects.filter(pk=self.order.pk).update(
-            created_at=timezone.now() - timedelta(minutes=minutes)
-        )
+    def refresh_with(self, token):
+        return self.client.post('/api/token/refresh/', {'refresh': token}, format='json')
 
-    def stock(self):
-        self.product.refresh_from_db()
-        return self.product.stock_qty
+    def test_refresh_rotates_and_old_token_dies(self):
+        res = self.refresh_with(self.refresh)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('access', res.data)
+        self.assertNotEqual(res.data['refresh'], self.refresh)
+        self.assertEqual(self.refresh_with(self.refresh).status_code, 401)  # replay rejected
 
-    def test_old_pending_order_is_cancelled_and_stock_restored(self):
-        self.age(60)
-        call_command('expire_pending_orders')
-        self.order.refresh_from_db()
-        self.assertEqual(self.order.status, 'cancelled')
-        self.assertEqual(self.stock(), 3)
+    def test_blacklisted_token_cannot_refresh(self):
+        self.client.post('/api/token/blacklist/', {'refresh': self.refresh}, format='json')
+        self.assertEqual(self.refresh_with(self.refresh).status_code, 401)
 
-    def test_recent_pending_order_is_untouched(self):
-        self.age(5)
-        call_command('expire_pending_orders')
-        self.order.refresh_from_db()
-        self.assertEqual(self.order.status, 'pending')
-        self.assertEqual(self.stock(), 1)
 
-    def test_paid_order_is_never_expired(self):
-        change_order_status(self.order.pk, 'paid')
-        self.age(60)
-        call_command('expire_pending_orders')
-        self.order.refresh_from_db()
-        self.assertEqual(self.order.status, 'paid')
 
-    def test_guard_blocks_cancel_if_paid_in_the_meantime(self):
-        change_order_status(self.order.pk, 'paid')
-        with self.assertRaises(InvalidTransition):
-            change_order_status(self.order.pk, 'cancelled', expected_status='pending')
-        self.assertEqual(self.stock(), 1)  # not restored
+
+// frontend/src/store/authStore.js
+import { create } from 'zustand';
+
+const useAuthStore = create((set) => ({
+  accessToken: localStorage.getItem('accessToken'),
+  refreshToken: localStorage.getItem('refreshToken'),
+
+  setTokens: (access, refresh) => {
+    localStorage.setItem('accessToken', access);
+    localStorage.setItem('refreshToken', refresh);
+    set({ accessToken: access, refreshToken: refresh });
+  },
+
+  logout: () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    set({ accessToken: null, refreshToken: null });
+  },
+}));
+
+export default useAuthStore;
+
+
+
+// frontend/src/routes/PrivateRoute.jsx
+const isAuthenticated = useAuthStore((s) => !!s.refreshToken);
+
+
+
+
+// frontend/src/api/client.js
+import axios from 'axios';
+import useAuthStore from '../store/authStore';
+
+const apiClient = axios.create({ baseURL: import.meta.env.VITE_API_URL });
+
+apiClient.interceptors.request.use((config) => {
+  const token = useAuthStore.getState().accessToken;
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+let refreshPromise = null;
+
+function refreshAccessToken() {
+  if (!refreshPromise) {
+    const { refreshToken } = useAuthStore.getState();
+    // plain axios, not apiClient, so this call can't trigger the interceptor again
+    refreshPromise = axios
+      .post(`${import.meta.env.VITE_API_URL}/token/refresh/`, { refresh: refreshToken })
+      .then(({ data }) => {
+        useAuthStore.getState().setTokens(data.access, data.refresh ?? refreshToken);
+        return data.access;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+apiClient.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    const original = error.config;
+    const isAuthCall = original?.url?.includes('/token/');
+
+    if (error.response?.status !== 401 || !original || original._retry || isAuthCall) {
+      return Promise.reject(error);
+    }
+    if (!useAuthStore.getState().refreshToken) {
+      return Promise.reject(error);
+    }
+
+    original._retry = true;
+    try {
+      const newAccess = await refreshAccessToken();
+      original.headers.Authorization = `Bearer ${newAccess}`;
+      return apiClient(original);
+    } catch {
+      useAuthStore.getState().logout();   // PrivateRoute will redirect to /login
+      return Promise.reject(error);
+    }
+  }
+);
+
+export default apiClient;
+
+
+
+
+// frontend/src/api/auth.js  (add)
+export const revokeToken = (refresh) => apiClient.post('/token/blacklist/', { refresh });
+
+
+
+
+// Navbar.jsx
+import { Link, useNavigate } from 'react-router-dom';
+import { revokeToken } from '../api/auth';
+import useAuthStore from '../store/authStore';
+
+// inside the component:
+const loggedIn = useAuthStore((s) => !!s.refreshToken);
+const navigate = useNavigate();
+
+const handleLogout = async () => {
+  const { refreshToken, logout } = useAuthStore.getState();
+  try { await revokeToken(refreshToken); } catch { /* already invalid, fine */ }
+  logout();
+  navigate('/');
+};
+
+// in the JSX:
+{loggedIn ? (
+  <button onClick={handleLogout}>Logout</button>
+) : (
+  <>
+    <Link to="/login" style={{ marginLeft: '1rem' }}>Login</Link>
+    <Link to="/register" style={{ marginLeft: '1rem' }}>Register</Link>
+  </>
+)}

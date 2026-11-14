@@ -1,36 +1,63 @@
-// PrivateRoute.jsx
-import { Navigate, useLocation } from 'react-router-dom';
-// ...
-const location = useLocation();
-if (!isAuthenticated) {
-  return <Navigate to="/login" replace state={{ from: location }}
-   
-   
-   
-    />;
+// frontend/src/api/auth.js  (add)
+export const register = (data) => apiClient.post('/register/', data);
+
+
+// frontend/src/pages/Register.jsx
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { register, login } from '../api/auth';
+import useAuthStore from '../store/authStore';
+
+function Register() {
+  const [form, setForm] = useState({ username: '', email: '', password: '', confirm: '' });
+  const [errors, setErrors] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const setToken = useAuthStore((s) => s.setToken);
+  const navigate = useNavigate();
+
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrors([]);
+    if (form.password !== form.confirm) {
+      setErrors(['Passwords do not match.']);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { username, email, password } = form;
+      await register({ username, email, password });
+      const { data } = await login(username, password);
+      setToken(data.access);
+      navigate('/');
+    } catch (err) {
+      // DRF returns { field: ["message", ...] }, or { detail: "..." } when throttled
+      const data = err.response?.data;
+      setErrors(data && typeof data === 'object' ? Object.values(data).flat() : ['Something went wrong.']);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const field = { display: 'block', width: '100%', marginBottom: '0.5rem' };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ padding: '1rem', maxWidth: '320px' }}>
+      <h1>Create account</h1>
+      {errors.length > 0 && (
+        <ul style={{ color: 'red' }}>
+          {errors.map((m, i) => <li key={i}>{m}</li>)}
+        </ul>
+      )}
+      <input name="username" placeholder="Username" value={form.username} onChange={handleChange} required style={field} />
+      <input name="email" type="email" placeholder="Email" value={form.email} onChange={handleChange} required style={field} />
+      <input name="password" type="password" placeholder="Password" value={form.password} onChange={handleChange} required style={field} />
+      <input name="confirm" type="password" placeholder="Confirm password" value={form.confirm} onChange={handleChange} required style={field} />
+      <button type="submit" disabled={submitting}>{submitting ? 'Creating...' : 'Register'}</button>
+      <p>Already have an account? <Link to="/login">Log in</Link></p>
+    </form>
+  );
 }
 
-
-
-// Login.jsx
-import { useNavigate, useLocation } from 'react-router-dom';
-// inside the component:
-const location = useLocation();
-const from = location.state?.from?.pathname || '/';
-// in handleSubmit, replace the navigate call:
-navigate(from, { replace: true });
-
-
-
-
-apiClient.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    const isLoginCall = err.config?.url?.includes('/token/');
-    if (err.response?.status === 401 && !isLoginCall) {
-      useAuthStore.getState().logout();
-      window.location.href = '/login';
-    }
-    return Promise.reject(err);
-  }
-);
+export default Register;

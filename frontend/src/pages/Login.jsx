@@ -9,7 +9,7 @@ function Login(){
         const [username,setUsername]=useState('')
         const [password,setPassword]=useState('')
         const [error,setError]=useState('')
-        const setToken=useAuthStore((state)=>state.setToken)
+        const setTokens=useAuthStore((state)=>state.setTokens)
         const navigate=useNavigate()
         const location=useLocation()
         const from=location.state?.from?.pathname || '/';
@@ -18,7 +18,7 @@ function Login(){
               e.preventDefault()
               try{
                 const res=await login(username,password)
-                setToken(res.data.access)
+                setTokens(res.data.access,res.data.refresh)
                 navigate(from,{replace:true})
               }catch(err){
                    setError('Invalid Credentials')

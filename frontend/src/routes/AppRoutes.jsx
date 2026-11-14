@@ -7,7 +7,7 @@ import ProductForm from '../pages/admin/ProductForm'
 import PrivateRoute  from './PrivateRoute'
 import Checkout from '../pages/Checkout'
 import OrderSuccess from '../pages/OrderSuccess'
-
+import Register from  '../pages/Register'
 
 function AppRoutes(){
      
@@ -18,6 +18,7 @@ function AppRoutes(){
             <Route path="/products/:id"  element={<ProductDetails/>}/>
             <Route path="/cart"  element={<Cart/>}/>
             <Route path='/login' element={<Login/>}/>
+            <Route path='/register' element={<Register/>}/>
             <Route path='/admin/products/new'
              element={
                 <PrivateRoute>

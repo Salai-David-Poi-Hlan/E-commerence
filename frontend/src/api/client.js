@@ -16,15 +16,50 @@ apiClient.interceptors.request.use((config)=>{
 })
 
 
+let refreshPromise=null;
+
+
+function refreshAccessToken(){
+    if(!refreshPromise){
+        const {refreshToken} = useAuthStore.getState()
+        refreshPromise=axios
+        .post(`${import.meta.env.VITE_API}/token/refresh/`,{refresh:refreshToken})
+        .then(({data})=>{
+            useAuthStore.getState().setToken(data.access,data.refresh??refreshToken)
+            return data.access
+        })
+        .finally(()=>{
+            refreshPromise=null
+        })
+    }
+    return refreshPromise
+}
+
+
 apiClient.interceptors.response.use(
     (res)=>res,
-    (err)=>{
-        const isLoginCall=err.config?.url?.includes('/token/');
-        if (err.response?.status===401 && !isLoginCall){
-            useAuthStore.getState().logout()
-            window.location.href='/login'
+    async (error)=>{
+        const original=error.config
+        const isAuthCall=original?.url?.includes('/token/');
+
+        if(error?.response?.status !==401 || !original || original._retry || isAuthCall){
+            return Promise.reject(error)
         }
-        return Promise.reject(err)
+        if (!useAuthStore.getState().refreshToken){
+            return Promise.reject
+            (error)
+        }
+
+        original._retry=true
+
+        try{
+            const newAccess = await refreshAccessToken()
+            original.headers.Authorization= `Bearer ${newAccess}`
+            return apiClient(original)
+        }catch{
+            useAuthStore.getState().logout()
+            return Promise.reject(error)
+        }
     }
 )
 
