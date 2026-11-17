@@ -25,7 +25,7 @@ function refreshAccessToken(){
         refreshPromise=axios
         .post(`${import.meta.env.VITE_API}/token/refresh/`,{refresh:refreshToken})
         .then(({data})=>{
-            useAuthStore.getState().setToken(data.access,data.refresh??refreshToken)
+            useAuthStore.getState().setTokens(data.access,data.refresh??refreshToken)
             return data.access
         })
         .finally(()=>{
@@ -46,8 +46,7 @@ apiClient.interceptors.response.use(
             return Promise.reject(error)
         }
         if (!useAuthStore.getState().refreshToken){
-            return Promise.reject
-            (error)
+            return Promise.reject(error)
         }
 
         original._retry=true

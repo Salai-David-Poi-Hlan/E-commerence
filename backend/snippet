@@ -1,169 +1,24 @@
-# ecommerce_backend/settings.py
-from datetime import timedelta
-
-INSTALLED_APPS = [
-    ...
-    'rest_framework_simplejwt.token_blacklist',
-]
-
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-}
-
-# ecommerce_backend/urls.py
-from rest_framework_simplejwt.views import TokenBlacklistView
-
-path('api/token/blacklist/', TokenBlacklistView.as_view()),   # used for logout
+from django.db import IntegrityError, transaction
+from django.test import TestCase
 
 
+class UserModelTests(TestCase):
+    def test_email_is_lowercased_on_save(self):
+        u = User.objects.create_user('a', email='Alice@Example.COM', password='x')
+        self.assertEqual(u.email, 'alice@example.com')
 
-# accounts/tests.py  (add)
-class RefreshTests(APITestCase):
-    def setUp(self):
-        User.objects.create_user('alice', password='c0rrect-horse-battery')
-        res = self.client.post('/api/token/', {
-            'username': 'alice', 'password': 'c0rrect-horse-battery'}, format='json')
-        self.refresh = res.data['refresh']
+    def test_database_rejects_duplicate_email_in_any_case(self):
+        User.objects.create_user('a', email='alice@example.com', password='x')
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                User.objects.create_user('b', email='ALICE@example.com', password='x')
 
-    def refresh_with(self, token):
-        return self.client.post('/api/token/refresh/', {'refresh': token}, format='json')
-
-    def test_refresh_rotates_and_old_token_dies(self):
-        res = self.refresh_with(self.refresh)
-        self.assertEqual(res.status_code, 200)
-        self.assertIn('access', res.data)
-        self.assertNotEqual(res.data['refresh'], self.refresh)
-        self.assertEqual(self.refresh_with(self.refresh).status_code, 401)  # replay rejected
-
-    def test_blacklisted_token_cannot_refresh(self):
-        self.client.post('/api/token/blacklist/', {'refresh': self.refresh}, format='json')
-        self.assertEqual(self.refresh_with(self.refresh).status_code, 401)
-
-
-
-
-// frontend/src/store/authStore.js
-import { create } from 'zustand';
-
-const useAuthStore = create((set) => ({
-  accessToken: localStorage.getItem('accessToken'),
-  refreshToken: localStorage.getItem('refreshToken'),
-
-  setTokens: (access, refresh) => {
-    localStorage.setItem('accessToken', access);
-    localStorage.setItem('refreshToken', refresh);
-    set({ accessToken: access, refreshToken: refresh });
-  },
-
-  logout: () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    set({ accessToken: null, refreshToken: null });
-  },
-}));
-
-export default useAuthStore;
-
-
-
-// frontend/src/routes/PrivateRoute.jsx
-const isAuthenticated = useAuthStore((s) => !!s.refreshToken);
-
-
-
-
-// frontend/src/api/client.js
-import axios from 'axios';
-import useAuthStore from '../store/authStore';
-
-const apiClient = axios.create({ baseURL: import.meta.env.VITE_API_URL });
-
-apiClient.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-let refreshPromise = null;
-
-function refreshAccessToken() {
-  if (!refreshPromise) {
-    const { refreshToken } = useAuthStore.getState();
-    // plain axios, not apiClient, so this call can't trigger the interceptor again
-    refreshPromise = axios
-      .post(`${import.meta.env.VITE_API_URL}/token/refresh/`, { refresh: refreshToken })
-      .then(({ data }) => {
-        useAuthStore.getState().setTokens(data.access, data.refresh ?? refreshToken);
-        return data.access;
-      })
-      .finally(() => {
-        refreshPromise = null;
-      });
-  }
-  return refreshPromise;
-}
-
-apiClient.interceptors.response.use(
-  (res) => res,
-  async (error) => {
-    const original = error.config;
-    const isAuthCall = original?.url?.includes('/token/');
-
-    if (error.response?.status !== 401 || !original || original._retry || isAuthCall) {
-      return Promise.reject(error);
-    }
-    if (!useAuthStore.getState().refreshToken) {
-      return Promise.reject(error);
-    }
-
-    original._retry = true;
-    try {
-      const newAccess = await refreshAccessToken();
-      original.headers.Authorization = `Bearer ${newAccess}`;
-      return apiClient(original);
-    } catch {
-      useAuthStore.getState().logout();   // PrivateRoute will redirect to /login
-      return Promise.reject(error);
-    }
-  }
-);
-
-export default apiClient;
-
-
-
-
-// frontend/src/api/auth.js  (add)
-export const revokeToken = (refresh) => apiClient.post('/token/blacklist/', { refresh });
-
-
-
-
-// Navbar.jsx
-import { Link, useNavigate } from 'react-router-dom';
-import { revokeToken } from '../api/auth';
-import useAuthStore from '../store/authStore';
-
-// inside the component:
-const loggedIn = useAuthStore((s) => !!s.refreshToken);
-const navigate = useNavigate();
-
-const handleLogout = async () => {
-  const { refreshToken, logout } = useAuthStore.getState();
-  try { await revokeToken(refreshToken); } catch { /* already invalid, fine */ }
-  logout();
-  navigate('/');
-};
-
-// in the JSX:
-{loggedIn ? (
-  <button onClick={handleLogout}>Logout</button>
-) : (
-  <>
-    <Link to="/login" style={{ marginLeft: '1rem' }}>Login</Link>
-    <Link to="/register" style={{ marginLeft: '1rem' }}>Register</Link>
-  </>
-)}
+    def test_registration_race_returns_400_not_500(self):
+        # skip the serializer's pre-check to simulate losing the race
+        from unittest.mock import patch
+        User.objects.create_user('a', email='alice@example.com', password='x')
+        with patch('accounts.serializers.RegisterSerializer.validate_email', lambda s, v: v.lower()):
+            res = self.client.post('/api/register/', {
+                'username': 'b', 'email': 'alice@example.com',
+                'password': 'c0rrect-horse-battery'}, content_type='application/json')
+        self.assertEqual(res.status_code, 400)

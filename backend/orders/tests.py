@@ -1,6 +1,6 @@
 from django.test import TestCase,TransactionTestCase
 from threading import Barrier,Thread
-from django.contrib.auth.models import User
+from accounts.models import User
 from django.db import connection
 from rest_framework.test import APIClient
 from products.models import Product
@@ -21,8 +21,8 @@ def make_client(user):
 
 class OrderRulesTests(TestCase):
     def setUp(self):
-        self.user=User.objects.create_user('buyer',password='x')
-        self.staff=User.objects.create_user('boss',password='x',is_staff=True)
+        self.user=User.objects.create_user('buyer',email='buyer@example.com',password='x')
+        self.staff=User.objects.create_user('boss',email='boss@example.com',password='x',is_staff=True)
         self.product=Product.objects.create(name='Mouse',price='10.00',stock_qty=3)
         self.client=make_client(self.user)
 
@@ -122,7 +122,7 @@ def run_in_threads(funcs):
 
 class ConcurrencyTests(TransactionTestCase):
     def setUp(self):
-        self.users=[User.objects.create_user(f'u{i}',password='x') for i in range(2)]
+        self.users=[User.objects.create_user(f'u{i}',email=f'u{i}@example.com',password='x') for i in range(2)]
         self.product=Product.objects.create(name='Last item',price='10.00',stock_qty=1)
 
     def test_two_buyers_one_item_only_one_wins(self):
@@ -174,7 +174,7 @@ class ConcurrencyTests(TransactionTestCase):
 
 class WebhookTests(TestCase):
     def setUp(self):
-        user=User.objects.create_user('buyer',password='x')
+        user=User.objects.create_user('buyer',email='buyer@example.com',password='x')
         product=Product.objects.create(name='Mouse',price='10.00',stock_qty=3)
         make_client(user).post('/api/orders/',{
             'shipping_address':'Bangkok',
@@ -247,7 +247,7 @@ class WebhookTests(TestCase):
 class ExpireCommandTests(TestCase):
 
     def setUp(self):
-        user=User.objects.create_user('buyer',password='x')
+        user=User.objects.create_user('buyer',email='buyer@example.com',password='x')
         self.product= Product.objects.create(name='Mouse',price='10.00',stock_qty=3)
         make_client(user).post('/api/orders/',{
             'shipping_address':"Bangkok",

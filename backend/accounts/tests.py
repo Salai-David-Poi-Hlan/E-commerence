@@ -1,6 +1,8 @@
-from django.contrib.auth.models import User
+from accounts.models import User
 from django.core.cache import cache
 from rest_framework.test import APITestCase
+from django.test import TestCase
+from django.db import IntegrityError,transaction
 
 
 URL='/api/register/'
@@ -59,7 +61,7 @@ class RegisterTests(APITestCase):
 
 class RefreshTests(APITestCase):
     def setUp(self):
-        User.objects.create_user('alice',password='c0rrect-horse-battery')
+        User.objects.create_user('alice',email='alice@example.com',password='c0rrect-horse-battery')
         res=self.client.post('/api/token/',{
             'username':'alice','password':'c0rrect-horse-battery'
         },format='json')
@@ -81,6 +83,29 @@ class RefreshTests(APITestCase):
         self.client.post('/api/token/blacklist/',{'refresh':self.refresh},format='json')
         self.assertEqual(self.refresh_with(self.refresh).status_code,401)
 
+
+class UserModelTest(TestCase):
+
+    def test_email_is_lowercased_on_save(self):
+        u= User.objects.create_user('a',email='Alice@Example.com',password='x')
+        self.assertEqual(u.email,'alice@example.com')
+
+    def test_database_refects_duplicate_email_in_any_case(self):
+        User.objects.create_user('a',email='alice@example.com',password='x')
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                User.objects.create_user('b',email='ALICE@example.com',password='x')
+
+
+    def test_registration_race_returns_400_not_500(self):
+        from unittest.mock import patch
+        User.objects.create_user('a',email='alice@example.com',password='x')
+        with patch('accounts.serializers.RegisterSerializer.validate_email',lambda s,v: v.lower()):
+            res=self.client.post('/api/register/',{
+                'username':'b','email':'alice@example.com',
+                'password':'c0rrect-horse-battery'
+            },content_type='application/json')
+        self.assertEqual(res.status_code,400)
 
 
 

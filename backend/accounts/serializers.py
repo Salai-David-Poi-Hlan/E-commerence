@@ -1,8 +1,11 @@
-from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.db import IntegrityError,transaction
 
+
+User=get_user_model()
 
 class RegisterSerializer(serializers.ModelSerializer):
     password=serializers.CharField(write_only=True,style={'input_type':'password'})
@@ -39,4 +42,10 @@ class RegisterSerializer(serializers.ModelSerializer):
     
 
     def create(self,validated_data):
-        return User.objects.create_user(**validated_data)
+        try:
+            with transaction.atomic():
+                return User.objects.create_user(**validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {'email':['An account with this email or username already exists']}
+            )

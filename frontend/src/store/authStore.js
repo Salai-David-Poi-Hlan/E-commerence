@@ -17,7 +17,7 @@ const useAuthStore=create((set)=>({
         localStorage.removeItem('refreshToken');
         set({accessToken:null,refreshToken:null})
     },
-    isAuthenticated:()=>!localStorage.getItem('accessToken')
+    isAuthenticated:()=>!!get().accessToken
 }))
 
 
