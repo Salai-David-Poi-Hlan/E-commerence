@@ -17,14 +17,11 @@ function Navbar(){
             await revokeToken(refreshToken)
          }
          catch{
-
+            
          }
          logout()
          navigate('/')
     }
-
-    
-
     return(
         <nav
         style={{
@@ -39,36 +36,34 @@ function Navbar(){
                  to="/" style={{fontWeight:'bold',textDecoration:'none',color:'inherit'}}>
                   My Store
                  </Link>
-
                  <div>
                     <Link
                  to="/" style={{marginRight:'1rem'}}
                  >
                     Home
                                      </Link>
-
-
                                        <Link
                  to="/cart" 
                  >
                     Cart {itemsCount > 0 && `${itemsCount}`}
                                      </Link>
-
                  {loggedIn ? (
-                    <button onClick={handlelogout}>Logout</button>
+                    <>
+                      <button onClick={handlelogout}>Logout</button>
+                     <Link to="/orders" style={{
+                      marginRight:'1rem'
+                     }}>My Orders</Link>
+                    </>
+                     
+                      
                  ):(
                     <>
                         <Link to="/login" style={{marginLeft:'1rem'}}>Login</Link>
                         <Link to="/register" style={{marginLeft:'1rem'}}>Register</Link>
-
                     </>
                  )}
-
-                 </div>
-
+                 </div>  
             </nav>
     )
 }
-
-
 export default Navbar

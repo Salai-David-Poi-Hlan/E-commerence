@@ -8,7 +8,6 @@ from .services import check_stock,change_order_status,InvalidTransition
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from decimal import Decimal
-from products.models import Product
 from .models import Order,OrderItem
 from .serializers import OrderSerializer,OrderCreateSerializer
 from .payment import create_checkout_session
@@ -31,9 +30,13 @@ class OrderViewSet(
 
     
     def get_queryset(self):
-        if self.request.user.is_staff:
-            return Order.objects.all().order_by('-created_at')
-        return Order.objects.filter(user=self.request.user).order_by('-created_at')
+        qs=Order.objects.prefetch_related('items').order_by('-created_at')
+        user=self.request.user
+        wants_all=self.request.query_params.get('scope') == 'all'
+
+        if user.is_staff and (self.action != 'list' or wants_all):
+            return qs
+        return qs.filter(user=user)
 
 
     def create(self,request):

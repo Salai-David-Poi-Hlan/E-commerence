@@ -293,7 +293,56 @@ class ExpireCommandTests(TestCase):
         change_order_status(self.order.pk,'paid')
         with self.assertRaises(InvalidTransition):
             change_order_status(self.order.pk,'cancelled',expected_status='pending')
-        self.assertEqual(self.stock(),1)   
+        self.assertEqual(self.stock(),1) 
+
+
+class OrderHistoryTests(TestCase):
+    def setUp(self):
+        self.alice=User.objects.create_user("alice",email='alice@example.com',password='x')
+        self.bob= User.objects.create_user("bob",email="bob@example.com",password='x')
+        self.staff=User.objects.create_user('bosss',email='boss@example.com',password='x',is_staff=True)
+        self.product=Product.objects.create(name='Mouse',price='10.00',stock_qty=5)
+
+        make_client(self.alice).post('/api/orders/',{
+            'shipping_address':'Bangkok',
+            'items':[{'product':self.product.id,'quantity':2}]
+        },format='json')
+
+        self.order=Order.objects.get()
+
+
+    def test_list_returns_only_own_orders(self):
+        self.assertEqual(len(make_client(self.alice).get('/api/orders/').data),1) 
+        self.assertEqual(len(make_client(self.bob).get('/api/orders/').data),0)
+
+
+    def test_staff_list_is_personal_unless_scope_all(self):
+        staff=make_client(self.staff)
+        self.assertEqual(len(staff.get('/api/orders/').data),0)
+        self.assertEqual(len(staff.get('/api/orders/?scope=all').data),1)
+
+    def test_customer_can_cancel_own_pending_order_and_stock_returns(self):
+        res=make_client(self.alice).post(
+            f'/api/orders/{self.order.pk}/status/',{'status':'cancelled'},format='json'
+        )
+        self.assertEqual(res.status_code,200)
+        self.assertEqual(res.data['status'],'cancelled')
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_qty,5)
+
+
+
+    def test_cannot_cancel_someone_else_order(self):
+        res=make_client(self.bob).post(
+            f'/api/orders/{self.order.pk}/status/',{'status':'cancelled'},format='json'
+        )
+        self.assertEqual(res.status_code,404)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'pending')
+
+    def test_list_includes_items(self):
+        data=make_client(self.alice).get('/api/orders/').data
+        self.assertEqual(data[0]['items'][0]['product_name'],'Mouse')
 
 
 

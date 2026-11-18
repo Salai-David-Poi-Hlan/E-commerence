@@ -17,7 +17,6 @@ class SeedCommandTests(TestCase):
         self.assertEqual(Product.objects.count(),count)
         self.assertEqual(get_user_model().objects.filter(username='admin_demo').count(),1)
 
-
     def test_rerun_does_not_overwrite_stock_unless_asked(self):
         call_command('seed_dev_data', verbosity=0)
         Product.objects.filter(name='Wireless Mouse').update(stock_qty=3)

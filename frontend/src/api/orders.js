@@ -20,3 +20,9 @@ export const payOrder=(orderId)=>
 
 export const getOrder=(orderId)=>
     apiClient.get(`/orders/${orderId}/`)
+
+
+export const getMyOrders = () =>apiClient.get('/orders/')
+
+export const cancelOrder = (orderId) => 
+    apiClient.post(`/orders/${orderId}/status`,{status:'cancelled'})

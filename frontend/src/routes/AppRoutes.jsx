@@ -8,17 +8,25 @@ import PrivateRoute  from './PrivateRoute'
 import Checkout from '../pages/Checkout'
 import OrderSuccess from '../pages/OrderSuccess'
 import Register from  '../pages/Register'
-
+import OrderHistory from '../pages/OrderHistory'
 function AppRoutes(){
      
 
     return (
         <Routes>
             <Route path="/" element={<Home/>}/>
+
             <Route path="/products/:id"  element={<ProductDetails/>}/>
             <Route path="/cart"  element={<Cart/>}/>
             <Route path='/login' element={<Login/>}/>
             <Route path='/register' element={<Register/>}/>
+            <Route path='/orders' 
+            element={
+                <PrivateRoute>
+                    <OrderHistory/>
+                </PrivateRoute>
+            }
+            />
             <Route path='/admin/products/new'
              element={
                 <PrivateRoute>
