@@ -78,7 +78,13 @@ function AdminOrders(){
              {loading?(
 
                    <p>Loading ... </p>
-             ) : (
+             ) : orders.length === 0 ?(
+                    <p>No {filter || ' '} orders.</p>
+             ) :
+             
+             
+             
+             (
 
                   <table style={{borderCollapse: 'collapse',width:'100%'}}>
                      <thead>
@@ -124,9 +130,6 @@ function AdminOrders(){
                                     {o.status}
                                  </td>
                                  <td>
-
-
-                                       {o.next_statuses}
                                       {o.next_statuses.filter((s)=>s!=='paid')
                                       .map((s)=>(
                                           <button   

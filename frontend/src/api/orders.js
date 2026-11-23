@@ -28,7 +28,7 @@ export const cancelOrder = (orderId) =>
     apiClient.post(`/orders/${orderId}/status/`,{status:'cancelled'})
 
 export const getAdminOrders = (status)=>
-    apiClient.get('/orders/',{params:{scope:'all',...apiClient(status?{status}:{})}})
+    apiClient.get('/orders/',{params:{scope:'all',...(status?{status}:{})}})
 
 
 export const setOrderStatus = (orderId,status)=>
