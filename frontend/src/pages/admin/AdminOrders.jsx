@@ -1,0 +1,153 @@
+import {useCallback,useEffect,useState} from 'react'
+import {getAdminOrders,setOrderStatus} from '../../api/orders'
+
+
+const FILTERS=['','pending','paid','shipped','delivered','cancelled']
+
+const ACTION_LABELS ={
+        shipped : 'Mark shipped',
+        delivered: 'Mark Delivered',
+        cancelled: 'Cancel'
+}
+
+
+function AdminOrders(){ 
+        const [filter,setFilter] = useState('paid')
+        const [orders,setOrders]=useState([])
+        const [loading,setLoading] = useState(true)
+        const [error,setError] = useState('')
+        const [busyId,setBusyId] = useState(null)
+
+        const load = useCallback(async () =>{
+             setLoading(true)
+             try{
+               const {data} = await getAdminOrders(filter)
+                setOrders(data)
+                setError('')
+
+             }catch(err){
+                  setError(err.response?.status === 403 ? 'Staff only': 'Could not laod orders')
+             }finally{
+                setLoading(false)
+             }
+        },[filter])
+
+
+        useEffect(()=>{
+              load()
+        },[load])
+
+
+        const handleAction = async (order,next)  =>{
+             if(next === 'cancelled') {
+                const refundWarning = order.status === 'paid'
+                ? '\n\nThis oredr is PAID. Cancelling restores stock but does NOT refund the customer. Refund it in the Stripe dashboard.'
+                : '';
+
+                if (!window.confirm(`Cancel order #${order.id}?${refundWarning}`)) return
+             }
+
+             setBusyId(order.id)
+             try{
+                   await setOrderStatus(order.id,next)
+             }catch(err){
+              setError(`Order #${order.id}: ${err.response?.data?.error || 'update failed'}`)
+             }finally{
+                setBusyId(null)
+                await load()
+             }
+        }
+
+
+
+        return(
+              <div style={{padding:'1rem'}}>
+             <h1>Orders</h1>
+             <div style={{marginBottom:'1rem'}}>
+                   {FILTERS.map((f)=>(
+                         <button
+                         key={f || 'all'}
+                         onClick={()=>setFilter(f)}
+                         style={{marginRight:'0.5rem',fontWeight : f===filter ? 'bold':'normal'}}
+                         >
+                         {f || 'all'}
+                         </button>
+                   ))}
+             </div>
+             {error && <p style={{color:'red'}}>{error}</p>}
+             {loading?(
+
+                   <p>Loading ... </p>
+             ) : (
+
+                  <table style={{borderCollapse: 'collapse',width:'100%'}}>
+                     <thead>
+                            <tr style={{textAlign:'left',borderBottom:'2px solid #ddd'}}>
+                     <th>#</th>
+                      <th>Customer</th>
+                       <th>Items</th>
+                        <th>Total</th>
+                         <th>Ship to</th>
+                          <th>Status</th>
+                           <th>Actions</th>
+                            </tr>
+                     </thead>
+
+                     <tbody>
+                        {orders.map((o)=>(
+                              <tr key={o.id} style={{borderBottom:'1px solid #eee','verticalAlign':'top'}}>
+                                 <td>
+                                    {o.id}
+                                 </td>
+                                 <td>
+                                    {o.customer}<br/>
+                                    <small>
+                                          {o.customer_email}
+                                    </small>
+                                 </td>
+                                 <td>
+                                    {o.items.map((i)=>(
+                                          <div key={i.id}>
+                                                {i.quantity} x {i.product_name}
+                                          </div>
+                                    ))}
+                                 </td>
+
+                                 <td>
+                                      Baht {Number(o.total_price).toFixed(2)}
+                                 </td>
+                                 <td style={{maxWidth:'200px'}}>
+                                    {o.shipping_address} 
+                                 </td>
+
+                                 <td>
+                                    {o.status}
+                                 </td>
+                                 <td>
+
+
+                                       {o.next_statuses}
+                                      {o.next_statuses.filter((s)=>s!=='paid')
+                                      .map((s)=>(
+                                          <button   
+                                          key={s}
+                                          disabled={busyId === o.id}
+                                          onClick={()=>handleAction(o,s)}      
+                                          style={{marginRight:'0.25rem'}}
+                                          >
+                                          {ACTION_LABELS[s]}
+                                          
+                                          </button>
+                                      ))
+                                      }
+                                 </td>
+                              </tr>
+                        ))}
+                     </tbody>
+                  </table>
+             )}
+              </div>
+        )
+}
+
+export default AdminOrders

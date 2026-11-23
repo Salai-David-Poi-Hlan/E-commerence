@@ -344,6 +344,64 @@ class OrderHistoryTests(TestCase):
         data=make_client(self.alice).get('/api/orders/').data
         self.assertEqual(data[0]['items'][0]['product_name'],'Mouse')
 
+class AdminOrderTests(TestCase):
+
+    def setUp(self):
+        self.alice=User.objects.create_user("alice",email='alice@example.com',password='x')
+        self.staff=User.objects.create_user('bosss',email='boss@example.com',password='x',is_staff=True)
+        self.product=Product.objects.create(name='Mouse',price='10.00',stock_qty=5)
+    
+        make_client(self.alice).post('/api/orders/',{
+                'shipping_address':'Bangkok',
+                'items':[{'product':self.product.id,'quantity':1}]
+            },format='json')
+    
+        self.order=Order.objects.get()
+        self.admin=make_client(self.staff)
+
+
+    def test_scope_all_is_forbidden_for_customers(self):
+        res=make_client(self.alice).get('/api/orders/?scope=all')
+        self.assertEqual(res.status_code,403)
+
+    def test_staff_sees_everyones_orders_with_customer_name(self):
+        data=self.admin.get('/api/orders/?scope=all').data
+        self.assertEqual(len(data),1)
+        self.assertEqual(data[0]['customer'],'alice')
+
+    def test_status_filter(self):
+        self.assertEqual(len(self.admin.get('/api/orders/?scope=all&status=paid').data),0)
+        self.assertEqual(len(self.admin.get('/api/orders/?scope=all&status=pending').data),1)
+
+    def test_staff_cannot_mark_paid_through_api(self):
+        res=self.admin.post(f'/api/orders/{self.order.pk}/status/',{'status':'paid'},format='json')
+        self.assertEqual(res.status_code,403)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'pending')
+
+    def test_staff_can_ship_then_deliver_a_paid_order(self):
+        change_order_status(self.order.pk,'paid')
+        url=f'/api/orders/{self.order.pk}/status/'
+        self.assertEqual(self.admin.post(url,{'status':'shipped'},format='json').status_code,200)
+        res=self.admin.post(url,{'status':'delivered'},format='json')
+        self.assertEqual(res.data['status'],'delivered')
+        self.assertEqual(res.data['next_statuses'],[])
+
+
+    def test_next_statuses_reflect_state_machine(self):
+        data=self.admin.get('/api/orders/?scope=all').data
+        self.assertEqual(data[0]['next_statuses'],['cancelled','paid'])
+
+    def test_me_endpoint(self):
+        self.assertTrue(self.admin.get('/api/me/').data['is_staff'])
+        self.assertFalse(make_client(self.alice).get('/api/me/').data['is_staff'])
+
+
+
+
+
+
+
 
 
     

@@ -20,7 +20,7 @@ from rest_framework.routers import DefaultRouter
 from products.views import ProductViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView,TokenRefreshView
 from orders.views import OrderViewSet,CartValidateView, PayOrderView, stripe_webhook
-from accounts.views import RegisterView
+from accounts.views import RegisterView,MeView
 from rest_framework_simplejwt.views import TokenBlacklistView
 
 router=DefaultRouter()
@@ -37,5 +37,6 @@ urlpatterns = [
     path('api/orders/<int:pk>/pay/', PayOrderView.as_view()),
     path('api/stripe/webhook/',stripe_webhook),
     path('api/register/', RegisterView.as_view()),
-    path('api/token/blacklist/',TokenBlacklistView.as_view())
+    path('api/token/blacklist/',TokenBlacklistView.as_view()),
+    path('api/me/',MeView.as_view())
 ]

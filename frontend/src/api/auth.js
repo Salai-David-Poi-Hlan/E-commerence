@@ -10,3 +10,6 @@ export const register=(data)=>apiClient.post('/register/',data)
 
 export const revokeToken=(refresh)=>apiClient.post('/token/blacklist/',{refresh})
 
+export const getMe=()=>apiClient.get('/me/')
+
+

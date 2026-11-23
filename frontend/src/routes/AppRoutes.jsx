@@ -9,6 +9,9 @@ import Checkout from '../pages/Checkout'
 import OrderSuccess from '../pages/OrderSuccess'
 import Register from  '../pages/Register'
 import OrderHistory from '../pages/OrderHistory'
+import SatffRoute from './StaffRoute'
+import AdminOrders from '../pages/admin/AdminOrders'
+
 function AppRoutes(){
      
 
@@ -39,6 +42,13 @@ function AppRoutes(){
            <Route path="/orders/:id/success" element={<PrivateRoute>
                    <OrderSuccess/>
            </PrivateRoute>}/>
+           <Route path='/admin/orders' element={
+                <SatffRoute>
+                    <AdminOrders/>
+                </SatffRoute>
+           }>
+
+           </Route>
         </Routes>
     )
   

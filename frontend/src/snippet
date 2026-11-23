@@ -1,63 +1,120 @@
-// frontend/src/api/auth.js  (add)
-export const register = (data) => apiClient.post('/register/', data);
+// frontend/src/pages/admin/AdminOrders.jsx
+import { useCallback, useEffect, useState } from 'react';
+import { getAdminOrders, setOrderStatus } from '../../api/orders';
 
+const FILTERS = ['', 'pending', 'paid', 'shipped', 'delivered', 'cancelled'];
 
-// frontend/src/pages/Register.jsx
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { register, login } from '../api/auth';
-import useAuthStore from '../store/authStore';
+const ACTION_LABELS = {
+  shipped: 'Mark shipped',
+  delivered: 'Mark delivered',
+  cancelled: 'Cancel',
+};
 
-function Register() {
-  const [form, setForm] = useState({ username: '', email: '', password: '', confirm: '' });
-  const [errors, setErrors] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
-  const setToken = useAuthStore((s) => s.setToken);
-  const navigate = useNavigate();
+function AdminOrders() {
+  const [filter, setFilter] = useState('paid');   // paid = "needs shipping", the common view
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [busyId, setBusyId] = useState(null);
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setErrors([]);
-    if (form.password !== form.confirm) {
-      setErrors(['Passwords do not match.']);
-      return;
-    }
-    setSubmitting(true);
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const { username, email, password } = form;
-      await register({ username, email, password });
-      const { data } = await login(username, password);
-      setToken(data.access);
-      navigate('/');
+      const { data } = await getAdminOrders(filter);
+      setOrders(data);
+      setError('');
     } catch (err) {
-      // DRF returns { field: ["message", ...] }, or { detail: "..." } when throttled
-      const data = err.response?.data;
-      setErrors(data && typeof data === 'object' ? Object.values(data).flat() : ['Something went wrong.']);
+      setError(err.response?.status === 403 ? 'Staff only.' : 'Could not load orders.');
     } finally {
-      setSubmitting(false);
+      setLoading(false);
+    }
+  }, [filter]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleAction = async (order, next) => {
+    if (next === 'cancelled') {
+      const refundWarning = order.status === 'paid'
+        ? '\n\nThis order is PAID. Cancelling restores stock but does NOT refund the customer. Refund it in the Stripe dashboard.'
+        : '';
+      if (!window.confirm(`Cancel order #${order.id}?${refundWarning}`)) return;
+    }
+    setBusyId(order.id);
+    try {
+      await setOrderStatus(order.id, next);
+    } catch (err) {
+      setError(`Order #${order.id}: ${err.response?.data?.error || 'update failed'}`);
+    } finally {
+      setBusyId(null);
+      await load();   // always re-sync: the order may no longer match the filter
     }
   };
 
-  const field = { display: 'block', width: '100%', marginBottom: '0.5rem' };
-
   return (
-    <form onSubmit={handleSubmit} style={{ padding: '1rem', maxWidth: '320px' }}>
-      <h1>Create account</h1>
-      {errors.length > 0 && (
-        <ul style={{ color: 'red' }}>
-          {errors.map((m, i) => <li key={i}>{m}</li>)}
-        </ul>
+    <div style={{ padding: '1rem' }}>
+      <h1>Orders</h1>
+
+      <div style={{ marginBottom: '1rem' }}>
+        {FILTERS.map((f) => (
+          <button
+            key={f || 'all'}
+            onClick={() => setFilter(f)}
+            style={{ marginRight: '0.5rem', fontWeight: f === filter ? 'bold' : 'normal' }}
+          >
+            {f || 'all'}
+          </button>
+        ))}
+      </div>
+
+      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {loading ? (
+        <p>Loading...</p>
+      ) : orders.length === 0 ? (
+        <p>No {filter || ''} orders.</p>
+      ) : (
+        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th>#</th><th>Customer</th><th>Items</th><th>Total</th>
+              <th>Ship to</th><th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o) => (
+              <tr key={o.id} style={{ borderBottom: '1px solid #eee', verticalAlign: 'top' }}>
+                <td>{o.id}</td>
+                <td>{o.customer}<br /><small>{o.customer_email}</small></td>
+                <td>
+                  {o.items.map((i) => (
+                    <div key={i.id}>{i.quantity} × {i.product_name}</div>
+                  ))}
+                </td>
+                <td>Baht {Number(o.total_price).toFixed(2)}</td>
+                <td style={{ maxWidth: '200px' }}>{o.shipping_address}</td>
+                <td>{o.status}</td>
+                <td>
+                  {o.next_statuses
+                    .filter((s) => s !== 'paid')   // money moves via the webhook only
+                    .map((s) => (
+                      <button
+                        key={s}
+                        disabled={busyId === o.id}
+                        onClick={() => handleAction(o, s)}
+                        style={{ marginRight: '0.25rem' }}
+                      >
+                        {ACTION_LABELS[s]}
+                      </button>
+                    ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
-      <input name="username" placeholder="Username" value={form.username} onChange={handleChange} required style={field} />
-      <input name="email" type="email" placeholder="Email" value={form.email} onChange={handleChange} required style={field} />
-      <input name="password" type="password" placeholder="Password" value={form.password} onChange={handleChange} required style={field} />
-      <input name="confirm" type="password" placeholder="Confirm password" value={form.confirm} onChange={handleChange} required style={field} />
-      <button type="submit" disabled={submitting}>{submitting ? 'Creating...' : 'Register'}</button>
-      <p>Already have an account? <Link to="/login">Log in</Link></p>
-    </form>
+    </div>
   );
 }
 
-export default Register;
+export default AdminOrders;

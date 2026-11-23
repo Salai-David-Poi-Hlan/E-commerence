@@ -8,8 +8,8 @@ function Navbar(){
     const itemsCount=items.reduce((sum,item)=>sum+item.quantity,0);
     const loggedIn=useAuthStore((s)=>!!s.refreshToken)
     const navigate=useNavigate()
+    const isStaff = useAuthStore((s)=>s.me?.is_staff)
 
-    console.log(loggedIn);
     
     const handlelogout=async () =>{
          const {refreshToken,logout} = useAuthStore.getState()
@@ -49,10 +49,20 @@ function Navbar(){
                                      </Link>
                  {loggedIn ? (
                     <>
-                      <button onClick={handlelogout}>Logout</button>
+                      
                      <Link to="/orders" style={{
                       marginRight:'1rem'
                      }}>My Orders</Link>
+                     {isStaff && 
+                     <Link 
+                     to="/admin/orders"
+                     style={{
+                        marginRight:'1rem'
+                     }}
+                     >
+                         Admin
+                     </Link>}
+                     <button onClick={handlelogout}>Logout</button>
                     </>
                      
                       

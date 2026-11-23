@@ -17,6 +17,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from rest_framework.exceptions import PermissionDenied
 
 logger=logging.getLogger(__name__)
 
@@ -30,11 +31,18 @@ class OrderViewSet(
 
     
     def get_queryset(self):
-        qs=Order.objects.prefetch_related('items').order_by('-created_at')
+        qs=Order.objects.select_related('user').prefetch_related('items').order_by('-created_at')
         user=self.request.user
-        wants_all=self.request.query_params.get('scope') == 'all'
 
-        if user.is_staff and (self.action != 'list' or wants_all):
+        if self.request.query_params.get('scope') == 'all':
+            if not user.is_staff:
+                raise PermissionDenied()
+            wanted=self.request.query_params.get('status')
+            if wanted in dict(Order.STATUS_CHOICES):
+                qs=qs.filter(status=wanted)
+            return qs
+        
+        if user.is_staff and self.action != 'list':
             return qs
         return qs.filter(user=user)
 
@@ -75,6 +83,9 @@ class OrderViewSet(
     def set_status(self,request,pk=None):
         order=self.get_object()
         new_status=request.data.get('status')
+
+        if new_status == 'paid':
+            return Response({'error':'Orders are marked paid by the payment webhook only'},status=status.HTTP_403_FORBIDDEN)
 
         if new_status not in dict(Order.STATUS_CHOICES):
             return Response({'error':'Invalid status'},status=status.HTTP_400_BAD_REQUEST)
