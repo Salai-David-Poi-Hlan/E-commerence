@@ -21,7 +21,9 @@ class Order(models.Model):
     shipping_address=models.TextField(blank=True)
     stripe_session_id = models.CharField(max_length=255,blank=True)
     paid_at = models.DateField(null=True,blank=True)
-
+    stripe_payment_intent_id= models.CharField(max_length=255,blank=True)
+    stripe_refund_id=models.CharField(max_length=255,blank=True)
+    refunded_at=models.DateTimeField(null=True,blank=True)
 
     def __str__(self):
         return f"Order #{self.id} - {self.user.username} - {self.status}"

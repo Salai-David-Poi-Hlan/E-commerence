@@ -11,7 +11,9 @@ import stripe
 from datetime import timedelta
 from django.core.management import call_command
 from django.utils import timezone
-
+from types import SimpleNamespace
+from unittest.mock import patch
+from .payment import refund_order,RefundFailed
 
 def make_client(user):
     client=APIClient()
@@ -396,6 +398,110 @@ class AdminOrderTests(TestCase):
         self.assertTrue(self.admin.get('/api/me/').data['is_staff'])
         self.assertFalse(make_client(self.alice).get('/api/me/').data['is_staff'])
 
+
+
+class RefundTest(TestCase):
+
+
+    def setUp(self):
+        self.user=User.objects.create_user('buyer',email='buyer@example.com',password='x')
+        self.boss=User.objects.create_user('boss',email='boss@example.com',password='x',is_staff=True)
+        self.product=Product.objects.create(name='Mouse',price='10.00',stock_qty=5)
+        make_client(self.user).post('/api/orders/',{
+            'shipping_address':'Bangkok',
+            'items':[{'product':self.product.id,'quantity':2}]
+        },format='json')
+
+        self.order=Order.objects.get()
+
+
+    def stock(self):
+        self.product.refresh_from_db()
+        return self.product.stock_qty
+    
+
+    @patch('orders.services.refund_order')
+    def test_cancelling_paid_order_refund_and_restore_stock(self,refund):
+        refund.return_value=SimpleNamespace(id='re_1')
+        change_order_status(self.order.pk,'paid')
+        change_order_status(self.order.pk,'cancelled')
+        refund.assert_called_once()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'cancelled')
+        self.assertEqual(self.order.stripe_refund_id,'re_1')
+        self.assertIsNotNone(self.order.refunded_at)
+        self.assertEqual(self.stock(),5)
+
+
+    @patch('orders.services.refund_order',side_effect = RefundFailed('boom'))
+    def test_refund_failed_lraves_order_paid_stock_untouched(self,refund):
+        change_order_status(self.order.pk,'paid')
+        with self.assertRaises(RefundFailed):
+            change_order_status(self.order.pk,'cancelled')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'paid')
+        self.assertEqual(self.stock(),3)
+
+
+    @patch('orders.services.refund_order')
+    def test_cancelling_draft_order_never_calls_stripe(self,refund):
+        change_order_status(self.order.pk,'cancelled')
+        refund.assert_not_called()
+        self.assertEqual(self.stock(),5)
+
+
+    
+
+    @patch('orders.services.refund_order',side_effect=RefundFailed('boom'))
+    def test_endpoint_order_returns_502_when_refund_fails(self,refund):
+        change_order_status(self.order.pk,'paid')
+        res=make_client(self.boss).post(
+            f'/api/orders/{self.order.pk}/status/',{'status':'cancelled'},format='json'
+        )
+        self.assertEqual(res.status_code,502)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status,'paid')
+
+    @patch('orders.payment.stripe.Refund.create')
+    def test_refund_uses_payment_intent_and_idempotency_key(self,create):
+        create.return_value=SimpleNamespace(id='re_1')
+        self.order.stripe_payment_intent_id='pi_123'
+        refund_order(self.order)
+        kwargs=create.call_args.kwargs
+        self.assertEqual(kwargs['payment_intent'],'pi_123')
+        self.assertEqual(kwargs['idempotency_key'],f'refund-order-{self.order.pk}')
+
+    @patch('orders.payment.stripe.Refund.create')
+    @patch('orders.payment.stripe.checkout.Session.retrieve')
+    def test_falls_back_to_session_lookup(self,retrieve,create):
+        retrieve.return_value=SimpleNamespace(payment_intent='pi_999')
+        create.return_value=SimpleNamespace(id='re_1')
+        self.order.stripe_session_id='cs_1'
+        refund_order(self.order)
+        self.assertEqual(create.call_args.kwargs['payment_intent'],'pi_999')
+
+
+    @patch('orders.payment.stripe.Refund.list')
+    @patch('orders.payment.stripe.Refund.create')
+    def test_already_refunded_in_dashboard_is_reused(self,create,list):
+        err=stripe.InvalidRequestError('already refunded',param=None,code='charge_already_refunded')
+        create.side_effect=err
+        list.return_value=SimpleNamespace(data=[SimpleNamespace(id='re_existing')])
+        self.order.stripe_payment_intent_id='pi_123'
+        self.assertEqual(refund_order(self.order).id,'re_existing')
+
+    def test_no_payment_found_raises(self):
+        with self.assertRaises(RefundFailed):
+            refund_order(self.order)
+
+    
+    
+
+
+    
+
+
+    
 
 
 

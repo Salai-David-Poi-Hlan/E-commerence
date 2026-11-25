@@ -41,7 +41,7 @@ function AdminOrders(){
         const handleAction = async (order,next)  =>{
              if(next === 'cancelled') {
                 const refundWarning = order.status === 'paid'
-                ? '\n\nThis oredr is PAID. Cancelling restores stock but does NOT refund the customer. Refund it in the Stripe dashboard.'
+                ? '\n\nThis oredr is PAID. Cancelling will refund the customer in full through Stripe and restore stock.'
                 : '';
 
                 if (!window.confirm(`Cancel order #${order.id}?${refundWarning}`)) return
@@ -127,7 +127,9 @@ function AdminOrders(){
                                  </td>
 
                                  <td>
-                                    {o.status}
+                                    {o.status}{o.refunded_at && <><br/>
+                                    <small>Refuneded</small>
+                                    </>}
                                  </td>
                                  <td>
                                       {o.next_statuses.filter((s)=>s!=='paid')

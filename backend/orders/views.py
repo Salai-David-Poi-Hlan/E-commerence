@@ -10,7 +10,7 @@ from django.shortcuts import get_object_or_404
 from decimal import Decimal
 from .models import Order,OrderItem
 from .serializers import OrderSerializer,OrderCreateSerializer
-from .payment import create_checkout_session
+from .payment import create_checkout_session,RefundFailed
 import logging
 import stripe
 from django.conf import settings
@@ -18,6 +18,7 @@ from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from rest_framework.exceptions import PermissionDenied
+
 
 logger=logging.getLogger(__name__)
 
@@ -103,6 +104,10 @@ class OrderViewSet(
             return Response({
             'error':str(e)
             },status=status.HTTP_409_CONFLICT)
+        
+        except RefundFailed:
+            return Response({'error':'Refund failed, so the order was NOT cancelled. Try again or refund in the stripe dashboard '},
+                            status=status.HTTP_502_BAD_GATEWAY)
 
         return Response(OrderSerializer(order).data)
 
@@ -159,6 +164,9 @@ def stripe_webhook(request):
         session=event['data']['object'].to_dict()
         if session['payment_status'] == 'paid':
             order_id=(session.get('metadata') or {}).get('order_id')
+            payment_intent=(session.get('metadata') or {}).get('payment_intent')
+            if payment_intent:
+                Order.objects.filter(pk=order_id).update(stripe_payment_intent_id= payment_intent)
             if not order_id:
                 logger.warning('Session %s has no order id',session.get('id'))
                 return HttpResponse(status=200)
